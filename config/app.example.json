@@ -1,0 +1,26 @@
+{
+  "application": {
+    "name": "road-river-management",
+    "environment": "development",
+    "debug": false
+  },
+  "storage": {
+    "nas_root": "./data",
+    "sqlite_path": "database/operational.sqlite",
+    "duckdb_path": "database/analytics.duckdb",
+    "map_tiles_path": "map_tiles",
+    "documents_path": "documents",
+    "backups_path": "backups",
+    "logs_path": "logs",
+    "styles_path": "styles",
+    "temp_path": "temp"
+  },
+  "database": {
+    "sqlite_busy_timeout_ms": 10000,
+    "sqlite_foreign_keys": true
+  },
+  "gis": {
+    "default_crs": "EPSG:4326",
+    "default_export_format": "GPKG"
+  }
+}

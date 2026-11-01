@@ -1,0 +1,14 @@
+flask
+duckdb
+python-dotenv
+pillow
+geopandas
+shapely
+pyproj
+openpyxl
+reportlab
+
+[dev]
+pytest
+pytest-cov
+ruff

@@ -1,0 +1,44 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Databases
+*.sqlite
+*.sqlite3
+*.db
+*.duckdb
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Production data
+documents/
+map_tiles/
+backups/
+logs/
+temp/
+data/
+
+# Local configuration
+.env
+.env.*
+!.env.example
+config/app.json
+config/local.json
+config/production.json
+
+# Build artifacts
+build/
+dist/
+*.exe
+
+# OS and IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

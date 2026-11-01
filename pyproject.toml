@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "road-river-management"
+version = "0.1.0"
+description = "Offline-first municipal infrastructure management system"
+requires-python = ">=3.14,<3.15"
+
+dependencies = [
+    "flask",
+    "duckdb",
+    "python-dotenv",
+    "pillow",
+    "geopandas",
+    "shapely",
+    "pyproj",
+    "openpyxl",
+    "reportlab"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
