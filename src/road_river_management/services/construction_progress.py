@@ -1,163 +1,73 @@
 
 """Construction progress and hierarchical reference progress.
 
+Reference progress uses the canonical progress_reference service.
+
+Construction work progress and status changes are recorded in history.
 Official stage, project and plan progress is never automatically updated.
-This service requires SQLite migration 0010.
+
+Requires SQLite migration 0010.
 """
 
 import math
 import sqlite3
 from uuid import uuid4
 
-from road_river_management.services.progress import (
-    calculate_stage_progress,
+from road_river_management.services.construction_transitions import (
+    validate_construction_transition,
+)
+from road_river_management.services.progress_reference import (
+    calculate_plan_reference_progress as _canonical_plan_progress,
+)
+from road_river_management.services.progress_reference import (
+    calculate_project_reference_progress as _canonical_project_progress,
+)
+from road_river_management.services.progress_reference import (
+    calculate_stage_reference_progress as _canonical_stage_progress,
 )
 
 REVIEW_THRESHOLD_POINTS = 10.0
 
 
 def _percent(value: float) -> float:
+    """Validate a percentage between 0 and 100."""
+
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError("Progress must be numeric")
 
     result = float(value)
+
     if not math.isfinite(result) or not 0 <= result <= 100:
         raise ValueError("Progress must be between 0 and 100")
 
     return result
 
 
-def _weighted_progress(
-    values: list[tuple[float, float]],
-) -> float | None:
-    """Use the existing weighted-progress implementation."""
-    return calculate_stage_progress(values)
-
-
 def calculate_construction_stage_reference_progress(
     connection: sqlite3.Connection,
     stage_id: int,
 ) -> float | None:
-    """Calculate a stage reference from linked construction works.
+    """Calculate stage reference using the canonical service."""
 
-    Without work links, use the stage's existing progress_percent.
-    """
-
-    stage = connection.execute(
-        """
-        SELECT stage_type_code, progress_percent
-        FROM project_stages
-        WHERE stage_id = ?
-        """,
-        (stage_id,),
-    ).fetchone()
-
-    if stage is None:
-        raise ValueError(f"Stage not found: {stage_id}")
-
-    stage_type, stage_progress = stage
-
-    if stage_type != "CONSTRUCTION":
-        return float(stage_progress)
-
-    rows = connection.execute(
-        """
-        SELECT
-            w.official_progress_percent,
-            link.progress_weight
-        FROM project_construction_links AS link
-        JOIN construction_works AS w
-          ON w.construction_work_id = link.construction_work_id
-        WHERE link.stage_id = ?
-        """,
-        (stage_id,),
-    ).fetchall()
-
-    if not rows:
-        return float(stage_progress)
-
-    return _weighted_progress(
-        [(float(progress), float(weight)) for progress, weight in rows]
-    )
+    return _canonical_stage_progress(connection, stage_id)
 
 
 def calculate_construction_project_reference_progress(
     connection: sqlite3.Connection,
     project_id: int,
 ) -> float | None:
-    """Calculate project reference progress using construction works."""
+    """Calculate project reference using the canonical service."""
 
-    if connection.execute(
-        """
-        SELECT 1 FROM maintenance_projects
-        WHERE project_id = ?
-        """,
-        (project_id,),
-    ).fetchone() is None:
-        raise ValueError(f"Project not found: {project_id}")
-
-    stages = connection.execute(
-        """
-        SELECT stage_id, progress_weight
-        FROM project_stages
-        WHERE project_id = ?
-          AND is_included_in_progress = 1
-          AND progress_weight > 0
-        """,
-        (project_id,),
-    ).fetchall()
-
-    values = []
-
-    for stage_id, weight in stages:
-        progress = calculate_construction_stage_reference_progress(
-            connection, stage_id
-        )
-        if progress is None:
-            return None
-        values.append((progress, float(weight)))
-
-    return _weighted_progress(values)
+    return _canonical_project_progress(connection, project_id)
 
 
 def calculate_construction_plan_reference_progress(
     connection: sqlite3.Connection,
     plan_id: int,
 ) -> float | None:
-    """Calculate plan reference progress from linked projects."""
+    """Calculate plan reference using the canonical service."""
 
-    if connection.execute(
-        """
-        SELECT 1 FROM maintenance_plans
-        WHERE plan_id = ?
-        """,
-        (plan_id,),
-    ).fetchone() is None:
-        raise ValueError(f"Plan not found: {plan_id}")
-
-    projects = connection.execute(
-        """
-        SELECT project_id, progress_weight
-        FROM maintenance_plan_items
-        WHERE plan_id = ?
-          AND is_included_in_progress = 1
-          AND excluded_on IS NULL
-          AND progress_weight > 0
-        """,
-        (plan_id,),
-    ).fetchall()
-
-    values = []
-
-    for project_id, weight in projects:
-        progress = calculate_construction_project_reference_progress(
-            connection, project_id
-        )
-        if progress is None:
-            return None
-        values.append((progress, float(weight)))
-
-    return _weighted_progress(values)
+    return _canonical_plan_progress(connection, plan_id)
 
 
 def _project_prompt(
@@ -166,10 +76,11 @@ def _project_prompt(
     stage_id: int,
     operation_uuid: str,
 ) -> None:
-    """Refresh an unresolved project reminder, or create one."""
+    """Create or consolidate a project progress review prompt."""
 
     reference = calculate_construction_project_reference_progress(
-        connection, project_id
+        connection,
+        project_id,
     )
 
     project = connection.execute(
@@ -180,6 +91,9 @@ def _project_prompt(
         """,
         (project_id,),
     ).fetchone()
+
+    if project is None:
+        raise ValueError(f"Project not found: {project_id}")
 
     official = project[0]
 
@@ -250,10 +164,11 @@ def _plan_prompt(
     stage_id: int,
     operation_uuid: str,
 ) -> None:
-    """Refresh an unresolved plan reminder, or create one."""
+    """Create or consolidate a plan progress review prompt."""
 
     reference = calculate_construction_plan_reference_progress(
-        connection, plan_id
+        connection,
+        plan_id,
     )
 
     plan = connection.execute(
@@ -264,6 +179,9 @@ def _plan_prompt(
         """,
         (plan_id,),
     ).fetchone()
+
+    if plan is None:
+        raise ValueError(f"Plan not found: {plan_id}")
 
     official = plan[0]
 
@@ -335,10 +253,15 @@ def update_construction_progress(
     new_status_code: str | None = None,
     change_reason: str | None = None,
     changed_by_user_id: int | None = None,
+    confirmed: bool = False,
 ) -> dict:
-    """Update work progress, record history and notify affected plans.
+    """Update construction progress, history and affected review prompts.
 
-    The caller must not already have an open transaction.
+    Operations are executed in one transaction.
+
+    The connection must not already have an active transaction.
+
+    Official stage, project and plan progress values are not changed.
     """
 
     new_percent = _percent(new_progress_percent)
@@ -353,7 +276,9 @@ def update_construction_progress(
     try:
         work = connection.execute(
             """
-            SELECT status_code, official_progress_percent
+            SELECT
+                status_code,
+                official_progress_percent
             FROM construction_works
             WHERE construction_work_id = ?
             """,
@@ -366,15 +291,16 @@ def update_construction_progress(
             )
 
         old_status, old_percent = work
+
         new_status = (
-            old_status if new_status_code is None else new_status_code
+            old_status
+            if new_status_code is None
+            else new_status_code
         )
 
-        if new_status != old_status:
-            reason = (change_reason or "").strip()
-            if not reason:
-                raise ValueError("Status change requires a reason")
+        reason = (change_reason or "").strip()
 
+        if new_status != old_status:
             valid_status = connection.execute(
                 """
                 SELECT 1
@@ -389,8 +315,13 @@ def update_construction_progress(
                 raise ValueError(
                     f"Invalid construction status: {new_status}"
                 )
-        else:
-            reason = (change_reason or "").strip()
+
+            validate_construction_transition(
+                old_status,
+                new_status,
+                change_reason=reason,
+                confirmed=confirmed,
+            )
 
         if new_percent == old_percent and new_status == old_status:
             raise ValueError("No progress or status change")
@@ -404,7 +335,11 @@ def update_construction_progress(
                 updated_at = CURRENT_TIMESTAMP
             WHERE construction_work_id = ?
             """,
-            (new_percent, new_status, construction_work_id),
+            (
+                new_percent,
+                new_status,
+                construction_work_id,
+            ),
         )
 
         connection.execute(
@@ -431,9 +366,10 @@ def update_construction_progress(
             ),
         )
 
-        delta = abs(new_percent - old_percent)
+        progress_delta = abs(new_percent - old_percent)
+
         requires_review = (
-            delta >= REVIEW_THRESHOLD_POINTS
+            progress_delta >= REVIEW_THRESHOLD_POINTS
             or new_status != old_status
         )
 
@@ -444,7 +380,9 @@ def update_construction_progress(
         if requires_review:
             affected_stages = connection.execute(
                 """
-                SELECT DISTINCT project_id, stage_id
+                SELECT DISTINCT
+                    project_id,
+                    stage_id
                 FROM project_construction_links
                 WHERE construction_work_id = ?
                 ORDER BY project_id, stage_id
@@ -463,6 +401,7 @@ def update_construction_progress(
                         stage_id,
                         operation_uuid,
                     )
+
                     notified_projects.add(project_id)
                     notified_project_ids.append(project_id)
 
@@ -489,6 +428,7 @@ def update_construction_progress(
                         stage_id,
                         operation_uuid,
                     )
+
                     notified_plans.add(plan_id)
                     notified_plan_ids.append(plan_id)
 

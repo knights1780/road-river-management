@@ -1,17 +1,18 @@
 
-"""Reference progress calculations for maintenance plans.
+"""Maintenance plan progress calculation and summary services.
 
-All database operations in this module are read-only.
-Official progress values are never updated automatically.
+Reference progress is calculated from stages and linked construction works.
+Official progress is managed separately and is never modified here.
 """
 
 import math
 import sqlite3
 from collections.abc import Iterable
-from typing import Any
 
 
 def _validate_number(value: float, name: str) -> float:
+    """Validate a numeric value and reject non-finite numbers."""
+
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"{name} must be a number")
 
@@ -26,155 +27,118 @@ def _validate_number(value: float, name: str) -> float:
 def calculate_stage_progress(
     items: Iterable[tuple[float, float]],
 ) -> float | None:
-    """Return a weighted progress percentage, or None if unassessable.
+    """Calculate weighted average progress.
 
-    Each item is (progress_percent, progress_weight).
-    Zero-weight entries do not contribute to the result.
+    Args:
+        items:
+            Iterable of (progress_percent, progress_weight).
+
+    Returns:
+        Weighted average between 0 and 100.
+        None if there are no items with positive weights.
+
+    Notes:
+        Zero-weight items do not contribute to the average.
+        Progress must be between 0 and 100.
+        Weights must be non-negative and finite.
     """
 
-    weighted_sum = 0.0
-    weight_sum = 0.0
+    weighted_total = 0.0
+    total_weight = 0.0
 
-    for percent, weight in items:
-        percent = _validate_number(percent, "progress_percent")
-        weight = _validate_number(weight, "progress_weight")
+    for progress, weight in items:
+        progress_value = _validate_number(
+            progress,
+            "progress",
+        )
+        weight_value = _validate_number(
+            weight,
+            "weight",
+        )
 
-        if not 0 <= percent <= 100:
-            raise ValueError("progress_percent must be between 0 and 100")
+        if not 0 <= progress_value <= 100:
+            raise ValueError(
+                "progress must be between 0 and 100"
+            )
 
-        if weight < 0:
-            raise ValueError("progress_weight must be non-negative")
+        if weight_value < 0:
+            raise ValueError(
+                "weight must be non-negative"
+            )
 
-        if weight > 0:
-            weighted_sum += percent * weight
-            weight_sum += weight
+        if weight_value == 0:
+            continue
 
-    if weight_sum == 0:
+        weighted_total += progress_value * weight_value
+        total_weight += weight_value
+
+    if total_weight == 0:
         return None
 
-    result = weighted_sum / weight_sum
+    result = weighted_total / total_weight
 
     if not math.isfinite(result):
-        raise ValueError("weighted progress calculation overflowed")
+        raise ValueError(
+            "calculated progress must be finite"
+        )
 
     return result
-
-
-def _get_project_row(
-    connection: sqlite3.Connection,
-    project_id: int,
-) -> tuple[Any, ...]:
-    row = connection.execute(
-        """
-        SELECT
-            project_id,
-            project_name,
-            status_code,
-            official_progress_percent
-        FROM maintenance_projects
-        WHERE project_id = ?
-        """,
-        (project_id,),
-    ).fetchone()
-
-    if row is None:
-        raise ValueError(f"Project not found: {project_id}")
-
-    return tuple(row)
-
-
-def _get_project_stages(
-    connection: sqlite3.Connection,
-    project_id: int,
-) -> list[dict[str, Any]]:
-    rows = connection.execute(
-        """
-        SELECT
-            stage_id,
-            stage_name,
-            stage_type_code,
-            status_code,
-            progress_percent,
-            progress_weight,
-            is_included_in_progress
-        FROM project_stages
-        WHERE project_id = ?
-        ORDER BY stage_order, stage_id
-        """,
-        (project_id,),
-    ).fetchall()
-
-    return [
-        {
-            "stage_id": row[0],
-            "stage_name": row[1],
-            "stage_type_code": row[2],
-            "status_code": row[3],
-            "progress_percent": row[4],
-            "progress_weight": row[5],
-            "is_included_in_progress": bool(row[6]),
-        }
-        for row in rows
-    ]
 
 
 def calculate_project_reference_progress(
     connection: sqlite3.Connection,
     project_id: int,
 ) -> float | None:
-    """Calculate one project's progress from included stages."""
+    """Calculate project progress using the canonical service.
 
-    _get_project_row(connection, project_id)
-    stages = _get_project_stages(connection, project_id)
+    Construction stages use linked construction works when available.
+    Other stages use their recorded progress percentages.
+    """
 
-    return calculate_stage_progress(
-        (
-            stage["progress_percent"],
-            stage["progress_weight"],
-        )
-        for stage in stages
-        if stage["is_included_in_progress"]
+    from road_river_management.services.progress_reference import (
+        calculate_project_reference_progress as calculate_reference,
     )
 
+    return calculate_reference(connection, project_id)
 
-def _get_plan_projects(
+
+def calculate_plan_reference_progress(
     connection: sqlite3.Connection,
     plan_id: int,
-) -> list[dict[str, Any]]:
-    rows = connection.execute(
-        """
-        SELECT
-            item.plan_item_id,
-            item.project_id,
-            item.display_order,
-            item.progress_weight,
-            item.is_included_in_progress,
-            item.excluded_on
-        FROM maintenance_plan_items AS item
-        WHERE item.plan_id = ?
-        ORDER BY item.display_order, item.plan_item_id
-        """,
-        (plan_id,),
-    ).fetchall()
+) -> float | None:
+    """Calculate plan progress using the canonical service.
 
-    return [
-        {
-            "plan_item_id": row[0],
-            "project_id": row[1],
-            "display_order": row[2],
-            "progress_weight": row[3],
-            "is_included_in_progress": bool(row[4]),
-            "excluded_on": row[5],
-        }
-        for row in rows
-    ]
+    Included projects are combined using their progress weights.
+    """
+
+    from road_river_management.services.progress_reference import (
+        calculate_plan_reference_progress as calculate_reference,
+    )
+
+    return calculate_reference(connection, plan_id)
 
 
-def _get_plan_row(
+def get_plan_progress_summary(
     connection: sqlite3.Connection,
     plan_id: int,
-) -> tuple[Any, ...]:
-    row = connection.execute(
+) -> dict:
+    """Return hierarchical progress information for a maintenance plan.
+
+    The summary includes:
+        - Plan official and reference progress
+        - Included and excluded maintenance projects
+        - Project official and reference progress
+        - Stage recorded and reference progress
+        - Stage weights and inclusion flags
+
+    This function performs SELECT queries only.
+    """
+
+    from road_river_management.services.progress_reference import (
+        calculate_stage_reference_progress,
+    )
+
+    plan = connection.execute(
         """
         SELECT
             plan_id,
@@ -189,102 +153,165 @@ def _get_plan_row(
         (plan_id,),
     ).fetchone()
 
-    if row is None:
-        raise ValueError(f"Plan not found: {plan_id}")
+    if plan is None:
+        raise ValueError(
+            f"Plan not found: {plan_id}"
+        )
 
-    return tuple(row)
+    (
+        db_plan_id,
+        plan_name,
+        plan_status,
+        plan_official_progress,
+        start_fiscal_year,
+        end_fiscal_year,
+    ) = plan
 
-
-def calculate_plan_reference_progress(
-    connection: sqlite3.Connection,
-    plan_id: int,
-) -> float | None:
-    """Calculate plan progress from its included projects.
-
-    A project with no calculable stage progress makes an included,
-    positive-weight plan incomplete for reference calculation.
-    """
-
-    _get_plan_row(connection, plan_id)
-    items = _get_plan_projects(connection, plan_id)
-
-    weighted_items = []
-
-    for item in items:
-        if (
-            not item["is_included_in_progress"]
-            or item["excluded_on"] is not None
-            or item["progress_weight"] == 0
-        ):
-            continue
-
-        project_progress = calculate_project_reference_progress(
+    plan_reference_progress = (
+        calculate_plan_reference_progress(
             connection,
-            item["project_id"],
+            plan_id,
         )
+    )
 
-        if project_progress is None:
-            return None
+    project_rows = connection.execute(
+        """
+        SELECT
+            item.plan_item_id,
+            item.project_id,
+            item.progress_weight,
+            item.is_included_in_progress,
+            item.excluded_on,
+            item.display_order,
+            project.project_name,
+            project.status_code,
+            project.official_progress_percent
+        FROM maintenance_plan_items AS item
+        JOIN maintenance_projects AS project
+          ON project.project_id = item.project_id
+        WHERE item.plan_id = ?
+        ORDER BY
+            item.display_order,
+            item.plan_item_id
+        """,
+        (plan_id,),
+    ).fetchall()
 
-        weighted_items.append(
-            (project_progress, item["progress_weight"])
-        )
-
-    return calculate_stage_progress(weighted_items)
-
-
-def get_plan_progress_summary(
-    connection: sqlite3.Connection,
-    plan_id: int,
-) -> dict[str, Any]:
-    """Return plan, project, and stage progress for a future UI."""
-
-    plan = _get_plan_row(connection, plan_id)
-    items = _get_plan_projects(connection, plan_id)
     projects = []
 
-    for item in items:
-        project = _get_project_row(
-            connection,
-            item["project_id"],
+    for project_row in project_rows:
+        (
+            plan_item_id,
+            project_id,
+            project_weight,
+            project_included,
+            excluded_on,
+            display_order,
+            project_name,
+            project_status,
+            project_official_progress,
+        ) = project_row
+
+        project_reference_progress = (
+            calculate_project_reference_progress(
+                connection,
+                project_id,
+            )
         )
 
-        reference_progress = calculate_project_reference_progress(
-            connection,
-            item["project_id"],
-        )
+        stage_rows = connection.execute(
+            """
+            SELECT
+                stage_id,
+                stage_name,
+                stage_type_code,
+                status_code,
+                progress_percent,
+                progress_weight,
+                is_included_in_progress,
+                stage_order
+            FROM project_stages
+            WHERE project_id = ?
+            ORDER BY
+                stage_order,
+                stage_id
+            """,
+            (project_id,),
+        ).fetchall()
+
+        stages = []
+
+        for stage_row in stage_rows:
+            (
+                stage_id,
+                stage_name,
+                stage_type_code,
+                stage_status,
+                stage_progress,
+                stage_weight,
+                stage_included,
+                stage_order,
+            ) = stage_row
+
+            stage_reference_progress = (
+                calculate_stage_reference_progress(
+                    connection,
+                    stage_id,
+                )
+            )
+
+            stages.append(
+                {
+                    "stage_id": stage_id,
+                    "stage_name": stage_name,
+                    "stage_type_code": stage_type_code,
+                    "status_code": stage_status,
+                    "progress_percent": stage_progress,
+                    "reference_progress_percent": (
+                        stage_reference_progress
+                    ),
+                    "progress_weight": stage_weight,
+                    "is_included_in_progress": bool(
+                        stage_included
+                    ),
+                    "stage_order": stage_order,
+                }
+            )
 
         projects.append(
             {
-                "project_id": project[0],
-                "project_name": project[1],
-                "status_code": project[2],
-                "official_progress_percent": project[3],
-                "reference_progress_percent": reference_progress,
-                "progress_weight": item["progress_weight"],
-                "is_included_in_progress": (
-                    item["is_included_in_progress"]
-                    and item["excluded_on"] is None
+                "plan_item_id": plan_item_id,
+                "project_id": project_id,
+                "project_name": project_name,
+                "status_code": project_status,
+                "official_progress_percent": (
+                    project_official_progress
                 ),
-                "stages": _get_project_stages(
-                    connection,
-                    item["project_id"],
+                "reference_progress_percent": (
+                    project_reference_progress
                 ),
+                "progress_weight": project_weight,
+                "is_included_in_progress": bool(
+                    project_included
+                    and excluded_on is None
+                ),
+                "excluded_on": excluded_on,
+                "display_order": display_order,
+                "stages": stages,
             }
         )
 
     return {
-        "plan_id": plan[0],
-        "plan_name": plan[1],
-        "status_code": plan[2],
-        "official_progress_percent": plan[3],
-        "reference_progress_percent": (
-            calculate_plan_reference_progress(
-                connection,
-                plan_id,
-            )
+        "plan_id": db_plan_id,
+        "plan_name": plan_name,
+        "status_code": plan_status,
+        "official_progress_percent": (
+            plan_official_progress
         ),
-        "start_fiscal_year": plan[4],
-        "end_fiscal_year": plan[5],
+        "reference_progress_percent": (
+            plan_reference_progress
+        ),
+        "start_fiscal_year": start_fiscal_year,
+        "end_fiscal_year": end_fiscal_year,
         "projects": projects,
     }
