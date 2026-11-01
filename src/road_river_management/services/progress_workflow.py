@@ -8,17 +8,25 @@ from road_river_management.services.progress import (
     calculate_plan_reference_progress,
     calculate_stage_progress,
 )
+from road_river_management.services.review_helpers import (
+    upsert_plan_review_prompt,
+    upsert_project_review_prompt,
+)
 
 REVIEW_THRESHOLD_POINTS = 10.0
 
 
 def _valid_percent(value: float) -> float:
+    """Validate a progress percentage."""
     result = calculate_stage_progress([(value, 1.0)])
     assert result is not None
     return result
 
 
-def _require_no_transaction(connection: sqlite3.Connection) -> None:
+def _require_no_transaction(
+    connection: sqlite3.Connection,
+) -> None:
+    """Ensure the caller has no active transaction."""
     if connection.in_transaction:
         raise RuntimeError(
             "Commit or rollback the existing transaction first"
@@ -35,10 +43,12 @@ def update_stage_progress(
     changed_by_user_id: int | None = None,
     confirmed: bool = False,
 ) -> dict:
-    """Update a stage and atomically record history and plan prompts.
+    """Update a stage and atomically record history and review prompts.
+
+    Official project and plan progress values are never
+    automatically modified.
 
     The connection must not already be in a transaction.
-    Official project and plan progress values are never changed.
     """
 
     new_percent = _valid_percent(new_progress_percent)
@@ -63,8 +73,10 @@ def update_stage_progress(
             raise ValueError(f"Stage not found: {stage_id}")
 
         project_id, old_status, old_percent = stage
+
         new_status = (
-            old_status if new_status_code is None
+            old_status
+            if new_status_code is None
             else new_status_code
         )
 
@@ -95,13 +107,15 @@ def update_stage_progress(
 
             if transition is None:
                 raise ValueError(
-                    f"Invalid stage transition: "
+                    "Invalid stage transition: "
                     f"{old_status} -> {new_status}"
                 )
 
-            requires_reason, requires_confirmation, requires_review = (
-                transition
-            )
+            (
+                requires_reason,
+                requires_confirmation,
+                transition_review_flag,
+            ) = transition
 
             if requires_reason and not reason:
                 raise ValueError(
@@ -113,7 +127,9 @@ def update_stage_progress(
                     "This status change requires confirmation"
                 )
 
-            transition_requires_review = bool(requires_review)
+            transition_requires_review = bool(
+                transition_review_flag
+            )
 
         connection.execute(
             """
@@ -124,7 +140,11 @@ def update_stage_progress(
                 updated_at = CURRENT_TIMESTAMP
             WHERE stage_id = ?
             """,
-            (new_status, new_percent, stage_id),
+            (
+                new_status,
+                new_percent,
+                stage_id,
+            ),
         )
 
         connection.execute(
@@ -154,6 +174,7 @@ def update_stage_progress(
             ),
         )
 
+        # Determine whether this change requires a review.
         progress_delta = abs(new_percent - old_percent)
 
         requires_review = (
@@ -165,62 +186,44 @@ def update_stage_progress(
         notified_plan_ids = []
 
         if requires_review:
-            plans = connection.execute(
-                """
-                SELECT DISTINCT
-                    p.plan_id,
-                    p.official_progress_percent
-                FROM maintenance_plans AS p
-                JOIN maintenance_plan_items AS item
-                  ON item.plan_id = p.plan_id
-                WHERE item.project_id = ?
-                  AND item.is_included_in_progress = 1
-                  AND item.excluded_on IS NULL
-                ORDER BY p.plan_id
-                """,
-                (project_id,),
-            ).fetchall()
-
             reason_code = (
                 "STAGE_STATUS_CHANGED"
                 if status_changed
                 else "STAGE_PROGRESS_CHANGED"
             )
 
-            for plan_id, official_progress in plans:
-                reference_progress = (
-                    calculate_plan_reference_progress(
-                        connection,
-                        plan_id,
-                    )
-                )
+            # Create or consolidate the project-level prompt.
+            upsert_project_review_prompt(
+                connection,
+                project_id,
+                stage_id,
+                operation_uuid,
+                reason_code,
+            )
 
-                connection.execute(
-                    """
-                    INSERT INTO progress_review_prompts (
-                        prompt_uuid,
-                        operation_uuid,
-                        plan_id,
-                        project_id,
-                        stage_id,
-                        prompt_reason_code,
-                        reference_progress_percent,
-                        official_progress_percent
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        str(uuid4()),
-                        operation_uuid,
-                        plan_id,
-                        project_id,
-                        stage_id,
-                        reason_code,
-                        reference_progress,
-                        official_progress,
-                    ),
-                )
+            # Find every active plan containing this project.
+            plans = connection.execute(
+                """
+                SELECT DISTINCT item.plan_id
+                FROM maintenance_plan_items AS item
+                WHERE item.project_id = ?
+                  AND item.is_included_in_progress = 1
+                  AND item.excluded_on IS NULL
+                ORDER BY item.plan_id
+                """,
+                (project_id,),
+            ).fetchall()
 
+            # Create or consolidate a prompt for each plan.
+            for (plan_id,) in plans:
+                upsert_plan_review_prompt(
+                    connection,
+                    plan_id,
+                    project_id,
+                    stage_id,
+                    operation_uuid,
+                    reason_code,
+                )
                 notified_plan_ids.append(plan_id)
 
         connection.commit()
@@ -250,26 +253,34 @@ def resolve_plan_progress_review(
     resolution_reason: str | None = None,
     resolved_by_user_id: int | None = None,
 ) -> dict:
-    """Resolve a plan reminder, optionally changing official progress.
+    """Resolve a plan review prompt.
 
-    decision:
+    Valid decisions:
         REVIEWED_UPDATED
         REVIEWED_UNCHANGED
         DISMISSED
+
+    The official progress is changed only when the
+    decision is REVIEWED_UPDATED.
     """
 
-    allowed = {
+    allowed_decisions = {
         "REVIEWED_UPDATED",
         "REVIEWED_UNCHANGED",
         "DISMISSED",
     }
 
-    if decision not in allowed:
-        raise ValueError(f"Invalid review decision: {decision}")
+    if decision not in allowed_decisions:
+        raise ValueError(
+            f"Invalid review decision: {decision}"
+        )
 
     if decision == "REVIEWED_UPDATED":
         if new_official_progress_percent is None:
-            raise ValueError("New official progress is required")
+            raise ValueError(
+                "New official progress is required"
+            )
+
         new_percent = _valid_percent(
             new_official_progress_percent
         )
@@ -278,6 +289,7 @@ def resolve_plan_progress_review(
             raise ValueError(
                 "Official progress can only be set when updating"
             )
+
         new_percent = None
 
     _require_no_transaction(connection)
@@ -286,7 +298,9 @@ def resolve_plan_progress_review(
     try:
         prompt = connection.execute(
             """
-            SELECT plan_id, review_status_code
+            SELECT
+                plan_id,
+                review_status_code
             FROM progress_review_prompts
             WHERE prompt_id = ?
             """,
@@ -294,16 +308,22 @@ def resolve_plan_progress_review(
         ).fetchone()
 
         if prompt is None:
-            raise ValueError(f"Review prompt not found: {prompt_id}")
+            raise ValueError(
+                f"Review prompt not found: {prompt_id}"
+            )
 
         plan_id, review_status = prompt
 
         if review_status != "PENDING":
-            raise ValueError("Review prompt already resolved")
+            raise ValueError(
+                "Review prompt already resolved"
+            )
 
         plan = connection.execute(
             """
-            SELECT status_code, official_progress_percent
+            SELECT
+                status_code,
+                official_progress_percent
             FROM maintenance_plans
             WHERE plan_id = ?
             """,
@@ -311,7 +331,9 @@ def resolve_plan_progress_review(
         ).fetchone()
 
         if plan is None:
-            raise ValueError(f"Plan not found: {plan_id}")
+            raise ValueError(
+                f"Plan not found: {plan_id}"
+            )
 
         plan_status, old_percent = plan
         reason = (resolution_reason or "").strip()
@@ -332,11 +354,15 @@ def resolve_plan_progress_review(
             connection.execute(
                 """
                 UPDATE maintenance_plans
-                SET official_progress_percent = ?,
+                SET
+                    official_progress_percent = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE plan_id = ?
                 """,
-                (new_percent, plan_id),
+                (
+                    new_percent,
+                    plan_id,
+                ),
             )
 
             connection.execute(
