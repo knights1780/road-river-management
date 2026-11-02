@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>予算ダッシュボード | 土木管理</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body><header class="header"><div><span class="brand">土木管理システム</span><span class="subtle">予算・工事・繰越</span></div><div class="header-actions"><span>{{ user.display }}</span><form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ logout_csrf }}"><button type="submit" class="secondary">ログアウト</button></form></div></header>
+<main class="container"><h1>予算ダッシュボード</h1><p class="subtle">登録済みデータによる参考集計です。正式な財務会計上の予算残高ではありません。</p>
+<form class="filters" method="get" action="{{ url_for('dashboard') }}"><label>予算年度<input name="fiscal_year" type="number" min="1900" max="2200" value="{{ fiscal_year }}" required></label><label>対象事業<select name="project_id"><option value="">全事業</option>{% for pid, pname in projects %}<option value="{{ pid }}" {% if pid == project_id %}selected{% endif %}>{{ pname }}</option>{% endfor %}</select></label><button type="submit">表示を更新</button></form>
+<section class="metrics"><article><div class="muted">補正後成立予算額</div><strong>{{ '{:,}'.format(report.budget_year.effective_appropriation_yen) }} 円</strong></article><article><div class="muted">契約配分額</div><strong>{{ '{:,}'.format(report.budget_year.allocated_contract_yen) }} 円</strong></article><article><div class="muted">配分支払累計（全年度）</div><strong>{{ '{:,}'.format(report.budget_year.allocated_payment_yen_all_years) }} 円</strong></article><article><div class="muted">確定繰越額（元年度別）</div><strong>{{ '{:,}'.format(report.carryovers_from_year.total_finalized_carryover_yen) }} 円</strong></article></section>
+<section class="panel"><h2>年度内の支払状況</h2>{% if project_id %}<p>対象事業への配分済支払額：{{ '{:,}'.format(report.payment_year.project_allocated_payment_yen) }} 円（事業別の配分額のみ）</p>{% else %}<p>記録済支払額：{{ '{:,}'.format(report.payment_year.paid_total_yen) }} 円／未配分：{{ '{:,}'.format(report.payment_year.unallocated_payment_yen) }} 円</p>{% endif %}<p class="subtle">契約額・成立予算額・支払額・繰越額を合算しないでください。</p></section>
+<section class="panel"><h2>事業別予算状況</h2><div class="scroll"><table><thead><tr><th>事業</th><th>予算要求数</th><th>成立予算額（円）</th><th>契約配分額（円）</th><th>配分支払累計（円）</th></tr></thead><tbody>{% for p in report.projects %}<tr><td>{{ p.project_name }}</td><td>{{ p.budget_request_count }}</td><td>{{ '{:,}'.format(p.effective_appropriation_yen) }}</td><td>{{ '{:,}'.format(p.allocated_contract_yen) }}</td><td>{{ '{:,}'.format(p.allocated_payment_yen_all_years) }}</td></tr>{% else %}<tr><td colspan="5">対象データがありません</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="panel"><h2>CSV帳票のダウンロード</h2>
+<p class="subtle">帳票は登録済みデータに基づく確認用資料です。金額の正式な会計上の確定を意味しません。</p>
+<div class="header-actions" style="flex-wrap:wrap;gap:.7rem">
+<a href="{{ url_for('exports.budget', fiscal_year=fiscal_year, project_id=project_id) }}">予算執行状況表 CSV</a>
+<a href="{{ url_for('exports.contracts', fiscal_year=fiscal_year, project_id=project_id) }}">工事契約配分一覧 CSV</a>
+<a href="{{ url_for('exports.payments', fiscal_year=fiscal_year) }}">支払年度一覧 CSV（全事業）</a>
+<a href="{{ url_for('exports.carryovers', fiscal_year=fiscal_year, project_id=project_id) }}">繰越事業一覧 CSV</a>
+</div>
+<p class="subtle">個別の繰越理由書・確認票は、下表の該当案件から出力してください。</p>
+</section>
+<section class="panel"><h2>繰越案件</h2><p class="subtle">理由別チェックリストは次の画面開発で操作項目に接続します。</p><div class="scroll"><table><thead><tr><th>事業</th><th>区分</th><th>状況</th><th>繰越先</th><th>確定額（円）</th><th>繰越理由</th><th>帳票</th></tr></thead><tbody>{% for c in carryovers.records %}<tr><td>{{ c.project_name }}</td><td>{{ '繰越明許費' if c.carryover_type_code == 'MEIKYO' else '事故繰越し' }}</td><td>{{ c.carryover_status_code }}</td><td>{{ c.destination_fiscal_year }}</td><td>{{ '{:,}'.format(c.actual_carryover_amount_yen) if c.actual_carryover_amount_yen is not none else '未確定' }}</td><td>{{ c.carryover_reason }}</td><td><a href="{{ url_for('exports.carryover_reason', carryover_id=c.carryover_id) }}">理由書 CSV</a>
+<form method="get" action="{{ url_for('exports.carryover_review', carryover_id=c.carryover_id) }}">
+<label>理由分類 <select name="reason_code" required>
+<option value="LAND">用地</option><option value="CONSULTATION">協議</option>
+<option value="DESIGN">設計変更</option><option value="PROCUREMENT">調達</option>
+<option value="DISASTER">災害</option><option value="OTHER">その他</option>
+</select></label><button type="submit">確認票 CSV</button></form></td></tr>{% else %}<tr><td colspan="7">対象データがありません</td></tr>{% endfor %}</tbody></table></div></section></main></body></html>
