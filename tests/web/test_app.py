@@ -103,7 +103,7 @@ def test_role_revocation_disables_existing_session(client, user, db_path):
     con.commit()
     con.close()
     assert client.get("/api/v1/dashboard/fiscal?fiscal_year=2027").status_code == 403
-    assert client.get("/dashboard").status_code == 403
+    assert client.get("/dashboard").status_code == 302
 
 
 def test_logout_csrf_and_session(client, user):

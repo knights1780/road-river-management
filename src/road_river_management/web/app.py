@@ -84,6 +84,8 @@ def create_app(*, database_path: str | Path, secret_key: str) -> Flask:
             return g.authenticated_user
         uid = session.get("user_id")
         if type(uid) is not int or uid <= 0:
+            if "user_id" in session:
+                session.clear()
             g.authenticated_user = None
             return None
         with _read_connection(path) as con:
@@ -106,10 +108,15 @@ def create_app(*, database_path: str | Path, secret_key: str) -> Flask:
                 }
             else:
                 roles = set()
-        g.authenticated_user = (
-            {"id": row[0], "login": row[1], "display": row[2], "roles": roles}
-            if row else None
-        )
+        # A suspended account or a user with no active permitted role must not
+        # retain a valid login cookie after an administrator changes access.
+        if row is None or not (roles & ROLE_CODES):
+            session.clear()
+            g.authenticated_user = None
+            return None
+        g.authenticated_user = {
+            "id": row[0], "login": row[1], "display": row[2], "roles": roles
+        }
         return g.authenticated_user
 
     def can_view():
