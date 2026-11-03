@@ -21,6 +21,7 @@ from road_river_management.services.budget_dashboard import get_integrated_fisca
 from road_river_management.services.carryover_reports import get_carryover_list_report
 from road_river_management.web.dashboard_api import create_dashboard_blueprint
 from road_river_management.web.exports_api import create_exports_blueprint
+from road_river_management.web.map_tiles_api import create_map_tiles_blueprint
 
 ROLE_CODES = frozenset({"ADMINISTRATOR", "EDITOR", "VIEWER"})
 FAILED_LIMIT = 5
@@ -62,7 +63,10 @@ def _parse_project(value: str | None) -> int | None:
     return int(value)
 
 
-def create_app(*, database_path: str | Path, secret_key: str) -> Flask:
+def create_app(
+    *, database_path: str | Path, secret_key: str,
+    map_sources: dict[str, str | Path] | None = None,
+) -> Flask:
     """Create an app; both database path and secret must be supplied explicitly."""
     if not isinstance(secret_key, str) or len(secret_key) < 32:
         raise ValueError("A random secret_key of at least 32 characters is required")
@@ -133,6 +137,10 @@ def create_app(*, database_path: str | Path, secret_key: str) -> Flask:
         create_exports_blueprint(
             connection_factory=lambda: _read_connection(path), can_view=can_view
         )
+    )
+
+    app.register_blueprint(
+        create_map_tiles_blueprint(sources=map_sources, can_view=can_view)
     )
 
     @app.after_request
@@ -315,7 +323,11 @@ def main():
         secret = os.environ.get("RRM_SECRET_KEY")
         if not secret:
             parser.error("RRM_SECRET_KEY environment variable must be set")
-        app = create_app(database_path=args.db, secret_key=secret)
+        demo_path = os.environ.get("RRM_MAP_DEMO_PATH")
+        sources = {"demo": Path(demo_path)} if demo_path else None
+        app = create_app(
+            database_path=args.db, secret_key=secret, map_sources=sources
+        )
         app.run(host="127.0.0.1", port=8765, debug=False, use_reloader=False)
 
 
