@@ -1,0 +1,134 @@
+{
+  "project": "road-river-management",
+  "status": "draft_requires_boundary_review",
+  "municipality_source": "MLIT N03 administrative boundary, Shizuoka, 2026",
+  "small_area_source": "e-Stat census 2020 small-area boundaries (Shizuoka)",
+  "base_municipality": {
+    "name": "吉田町",
+    "code": "22424",
+    "mode": "whole_municipality"
+  },
+  "districts": [
+    {
+      "id": "hatsukura",
+      "name": "島田市・初倉地区",
+      "municipality": "島田市",
+      "name_prefixes": [
+        "井口",
+        "大柳",
+        "大柳南",
+        "阪本",
+        "月坂",
+        "中河",
+        "船木",
+        "湯日"
+      ],
+      "review": "初倉中学校区・初倉交番管轄資料を参考にした候補。空港用地等の扱いは要確認。"
+    },
+    {
+      "id": "oigawa",
+      "name": "焼津市・大井川地区",
+      "municipality": "焼津市",
+      "name_prefixes": [
+        "中島",
+        "飯淵",
+        "利右衛門",
+        "吉永",
+        "高新田",
+        "宗高",
+        "上小杉",
+        "藤守",
+        "下小杉",
+        "相川",
+        "西島",
+        "上泉",
+        "下江留",
+        "上新田"
+      ],
+      "review": "焼津市大井川地区公表地名リストに基づく。小地域と大字界の一致は要確認。"
+    },
+    {
+      "id": "haibara_east",
+      "name": "牧之原市・榛原地区東部",
+      "municipality": "牧之原市",
+      "name_prefixes": [
+        "細江",
+        "静波",
+        "川崎仁田",
+        "川崎道場",
+        "川崎勝俣"
+      ],
+      "review": "榛原地区の東側を優先した暫定候補。坂部・白井・勝間田等は初期対象外。利用部署の確認後に調整。"
+    }
+  ],
+  "sea_buffer_m": 1000,
+  "land_buffer_m": 0,
+  "output_crs": "EPSG:4326",
+  "projection_for_buffer": "EPSG:32654",
+  "tile_layers": [
+    {
+      "name": "標準地図",
+      "id": "std",
+      "min_zoom": 5,
+      "max_zoom": 18,
+      "average_kb_low": 20,
+      "average_kb_high": 60
+    },
+    {
+      "name": "淡色地図",
+      "id": "pale",
+      "min_zoom": 5,
+      "max_zoom": 18,
+      "average_kb_low": 20,
+      "average_kb_high": 60
+    },
+    {
+      "name": "白地図",
+      "id": "blank",
+      "min_zoom": 5,
+      "max_zoom": 14,
+      "average_kb_low": 12,
+      "average_kb_high": 45
+    },
+    {
+      "name": "最新航空写真",
+      "id": "seamlessphoto",
+      "min_zoom": 14,
+      "max_zoom": 18,
+      "average_kb_low": 75,
+      "average_kb_high": 180
+    },
+    {
+      "name": "治水地形分類図",
+      "id": "lcmfc2",
+      "min_zoom": 11,
+      "max_zoom": 16,
+      "average_kb_low": 12,
+      "average_kb_high": 60
+    },
+    {
+      "name": "土地条件図",
+      "id": "lcm25k_2012",
+      "min_zoom": 10,
+      "max_zoom": 16,
+      "average_kb_low": 12,
+      "average_kb_high": 60
+    },
+    {
+      "name": "明治期の低湿地",
+      "id": "swale",
+      "min_zoom": 10,
+      "max_zoom": 16,
+      "average_kb_low": 12,
+      "average_kb_high": 60
+    },
+    {
+      "name": "色別標高図",
+      "id": "relief",
+      "min_zoom": 5,
+      "max_zoom": 15,
+      "average_kb_low": 15,
+      "average_kb_high": 60
+    }
+  ]
+}
