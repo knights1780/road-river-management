@@ -21,6 +21,7 @@ from road_river_management.services.budget_dashboard import get_integrated_fisca
 from road_river_management.services.carryover_reports import get_carryover_list_report
 from road_river_management.web.dashboard_api import create_dashboard_blueprint
 from road_river_management.web.exports_api import create_exports_blueprint
+from road_river_management.web.map_tile_cache import LocalTileCache
 from road_river_management.web.map_tiles_api import create_map_tiles_blueprint
 
 ROLE_CODES = frozenset({"ADMINISTRATOR", "EDITOR", "VIEWER"})
@@ -66,6 +67,9 @@ def _parse_project(value: str | None) -> int | None:
 def create_app(
     *, database_path: str | Path, secret_key: str,
     map_sources: dict[str, str | Path] | None = None,
+    map_cache_path: str | Path | None = None,
+    map_cache_max_bytes: int = 2 * 1024**3,
+    map_versions: dict[str, str] | None = None,
 ) -> Flask:
     """Create an app; both database path and secret must be supplied explicitly."""
     if not isinstance(secret_key, str) or len(secret_key) < 32:
@@ -140,7 +144,12 @@ def create_app(
     )
 
     app.register_blueprint(
-        create_map_tiles_blueprint(sources=map_sources, can_view=can_view)
+        create_map_tiles_blueprint(
+            sources=map_sources, can_view=can_view,
+            cache=(LocalTileCache(map_cache_path, max_bytes=map_cache_max_bytes)
+                   if map_cache_path is not None else None),
+            versions=map_versions,
+        )
     )
 
     @app.after_request
@@ -325,8 +334,12 @@ def main():
             parser.error("RRM_SECRET_KEY environment variable must be set")
         demo_path = os.environ.get("RRM_MAP_DEMO_PATH")
         sources = {"demo": Path(demo_path)} if demo_path else None
+        cache_path = os.environ.get("RRM_MAP_CACHE_PATH")
+        cache_version = os.environ.get("RRM_MAP_DEMO_VERSION")
         app = create_app(
-            database_path=args.db, secret_key=secret, map_sources=sources
+            database_path=args.db, secret_key=secret, map_sources=sources,
+            map_cache_path=cache_path,
+            map_versions={"demo": cache_version} if demo_path and cache_version else None,
         )
         app.run(host="127.0.0.1", port=8765, debug=False, use_reloader=False)
 
