@@ -19,8 +19,11 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from road_river_management.services.budget_dashboard import get_integrated_fiscal_dashboard
 from road_river_management.services.carryover_reports import get_carryover_list_report
+from road_river_management.web.case_repair_ui import create_case_repair_ui_blueprint
 from road_river_management.web.dashboard_api import create_dashboard_blueprint
 from road_river_management.web.exports_api import create_exports_blueprint
+from road_river_management.web.facility_api import create_facility_blueprint
+from road_river_management.web.facility_map import create_facility_map_blueprint
 from road_river_management.web.map_tile_cache import LocalTileCache
 from road_river_management.web.map_tiles_api import create_map_tiles_blueprint
 
@@ -143,12 +146,43 @@ def create_app(
         )
     )
 
+    # Facility API and progressive map UI; reuse the same authenticated,
+    # read-only database connection factory as the existing blueprints.
+    app.register_blueprint(
+        create_facility_blueprint(
+            connection_factory=lambda: _read_connection(path), can_view=can_view
+        )
+    )
+
+    app.register_blueprint(
+        create_facility_map_blueprint(
+            connection_factory=lambda: _read_connection(path), can_view=can_view,
+            map_layer="demo",
+        )
+    )
+
     app.register_blueprint(
         create_map_tiles_blueprint(
             sources=map_sources, can_view=can_view,
             cache=(LocalTileCache(map_cache_path, max_bytes=map_cache_max_bytes)
                    if map_cache_path is not None else None),
             versions=map_versions,
+        )
+    )
+
+    @contextmanager
+    def write_connection():
+        connection = _connect(path, read_only=False)
+        try:
+            yield connection
+        finally:
+            connection.close()
+
+    app.register_blueprint(
+        create_case_repair_ui_blueprint(
+            read_connection=lambda: _read_connection(path),
+            write_connection=write_connection,
+            current_user=current_user,
         )
     )
 

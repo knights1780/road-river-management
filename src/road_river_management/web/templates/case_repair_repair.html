@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ repair.repair_name }} | 修繕詳細</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body><header class="header"><strong>土木管理システム｜修繕詳細</strong><a href="{{ url_for('dashboard') }}">ダッシュボード</a></header>
+<main class="container"><h1>{{ repair.repair_name }}</h1>
+<p class="subtle">施設：{{ repair.facility_name }} ／ 修繕ID：{{ repair.repair_id }}</p>
+<section class="panel"><h2>修繕内容</h2>
+<p>種別：{{ repair.repair_type }}</p>
+<p>概要：{{ repair.repair_description or '未登録' }}</p>
+<p>着手：{{ repair.started_on or '未登録' }} ／ 完了：{{ repair.completed_on or '未登録' }}</p>
+<p>実績費用：{{ '{:,}'.format(repair.actual_cost_yen) + ' 円' if repair.actual_cost_yen is not none else '未登録' }}</p>
+</section><section class="panel"><h2>関連要望・案件</h2>
+{% if cases %}<ul>{% for c in cases %}<li><a href="{{ url_for('case_repair_ui.case_page', case_id=c.case_id) }}">{{ c.title }}</a>（{{ c.status_code }}）</li>{% endfor %}</ul>
+{% else %}<p>関連要望はありません。</p>{% endif %}</section>
+</main></body></html>
