@@ -42,3 +42,19 @@ dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# GIS environment
+.venv-gis/
+
+# R session history
+.Rhistory
+**/.Rhistory
+
+# Local backup files
+*.bak
+*.m3c-backup
+
+# Python caches
+__pycache__/
+.pytest_cache/
+.ruff_cache/

@@ -36,3 +36,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py314"
+
+[tool.ruff.lint.per-file-ignores]
+"tools/maps/scripts/download_gsi_tiles.py" = ["UP017"]
+"tools/maps/scripts/download_gsi_extra.py" = ["UP017"]
