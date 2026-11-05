@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{ detail.facility.facility_name }} | 施設詳細</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="header">
+    <strong>土木管理システム｜施設詳細</strong>
+    <nav aria-label="画面移動">
+      <a href="{{ url_for('dashboard') }}">ダッシュボード</a>
+      <a href="/facilities/map">施設地図</a>
+    </nav>
+  </header>
+  <main class="container">
+    <h1>{{ detail.facility.facility_name }}</h1>
+    <p class="subtle">
+      {{ detail.facility.category_name }} ＞ {{ detail.facility.type_name }}
+      ／ 施設ID：{{ detail.facility.facility_id }}
+      {% if detail.facility.facility_code %}／ 管理番号：{{ detail.facility.facility_code }}{% endif %}
+    </p>
+    <section class="panel" aria-labelledby="basic-title">
+      <h2 id="basic-title">基本情報</h2>
+      <p>{{ detail.facility.description or '施設概要は未登録です。' }}</p>
+      <p>施設写真：未連携</p>
+    </section>
+    <section class="panel" aria-labelledby="repairs-title">
+      <h2 id="repairs-title">修繕履歴（{{ detail.repairs|length }}件）</h2>
+      {% if detail.repairs %}
+      <ul>
+        {% for repair in detail.repairs %}
+        <li>
+          <a href="{{ url_for('case_repair_ui.repair_page', repair_id=repair.repair_id) }}">{{ repair.repair_name }}</a>
+          <span class="subtle">（{{ repair.completed_on or repair.started_on or '日付未登録' }}）</span>
+          <p>{{ repair.repair_description or '概要未登録' }}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<p>修繕履歴はありません。</p>{% endif %}
+    </section>
+    <section class="panel" aria-labelledby="cases-title">
+      <h2 id="cases-title">関連する要望・案件（{{ detail.cases|length }}件）</h2>
+      {% if detail.cases %}
+      <ul>
+        {% for case in detail.cases %}
+        <li>
+          <a href="{{ url_for('case_repair_ui.case_page', case_id=case.case_id) }}">{{ case.title }}</a>
+          <span class="subtle">（{{ case.received_on }}／{{ case.status_code }}）</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<p>関連する要望・案件はありません。</p>{% endif %}
+    </section>
+    <details class="panel">
+      <summary><strong>点検履歴（{{ detail.inspections|length }}件）</strong></summary>
+      {% if detail.inspections %}<ul>
+      {% for item in detail.inspections %}
+        <li>{{ item.inspection_date }}：{{ item.inspection_name }}（{{ item.inspection_result or '結果未登録' }}）</li>
+      {% endfor %}
+      </ul>{% else %}<p>点検履歴はありません。</p>{% endif %}
+    </details>
+    <details class="panel">
+      <summary><strong>設備・構成部品（{{ detail.components|length }}件）</strong></summary>
+      {% if detail.components %}<ul>
+      {% for item in detail.components %}<li>{{ item.component_name }}（{{ item.component_type or '分類未登録' }}）</li>{% endfor %}
+      </ul>{% else %}<p>構成部品は登録されていません。</p>{% endif %}
+    </details>
+  </main>
+</body>
+</html>

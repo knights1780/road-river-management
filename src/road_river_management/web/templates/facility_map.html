@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>施設地図 | 土木管理システム</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='facility_map.css') }}">
+<script defer src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script defer src="{{ url_for('static', filename='facility_map.js') }}"></script>
+</head>
+<body>
+<header class="header"><strong>土木管理システム｜施設地図</strong><a href="{{ url_for('dashboard') }}">ダッシュボードに戻る</a></header>
+<main class="facility-layout" data-map-layer="{{ map_layer }}">
+<div id="facility-map" aria-label="施設の地図"></div>
+<aside id="facility-panel" class="facility-panel" aria-live="polite">
+<h1>施設を選択してください</h1>
+<p class="subtle">地図上の施設をクリックすると概要を表示します。</p>
+</aside>
+</main>
+</body></html>

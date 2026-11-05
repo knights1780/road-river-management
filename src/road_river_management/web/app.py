@@ -23,6 +23,7 @@ from road_river_management.web.case_repair_ui import create_case_repair_ui_bluep
 from road_river_management.web.dashboard_api import create_dashboard_blueprint
 from road_river_management.web.exports_api import create_exports_blueprint
 from road_river_management.web.facility_api import create_facility_blueprint
+from road_river_management.web.facility_detail_ui import create_facility_detail_blueprint
 from road_river_management.web.facility_map import create_facility_map_blueprint
 from road_river_management.web.map_tile_cache import LocalTileCache
 from road_river_management.web.map_tiles_api import create_map_tiles_blueprint
@@ -133,6 +134,13 @@ def create_app(
     def can_view():
         user = current_user()
         return user is not None and bool(user["roles"] & ROLE_CODES)
+
+    app.register_blueprint(
+        create_facility_detail_blueprint(
+            connection_factory=lambda: _read_connection(path),
+            can_view=can_view,
+        )
+    )
 
     app.register_blueprint(
         create_dashboard_blueprint(
