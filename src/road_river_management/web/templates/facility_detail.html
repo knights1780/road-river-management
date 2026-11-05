@@ -24,7 +24,7 @@
     <section class="panel" aria-labelledby="basic-title">
       <h2 id="basic-title">基本情報</h2>
       <p>{{ detail.facility.description or '施設概要は未登録です。' }}</p>
-      <p>施設写真：未連携</p>
+      <p><a href="/photos/facilities/{{ detail.facility.facility_id }}">施設写真の登録・閲覧</a></p>
     </section>
     <section class="panel" aria-labelledby="repairs-title">
       <h2 id="repairs-title">修繕履歴（{{ detail.repairs|length }}件）</h2>

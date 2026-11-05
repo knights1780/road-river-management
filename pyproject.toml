@@ -17,7 +17,8 @@ dependencies = [
     "shapely",
     "pyproj",
     "openpyxl",
-    "reportlab"
+    "reportlab",
+    "pillow-heif"
 ]
 
 [project.optional-dependencies]

@@ -27,6 +27,7 @@ from road_river_management.web.facility_detail_ui import create_facility_detail_
 from road_river_management.web.facility_map import create_facility_map_blueprint
 from road_river_management.web.map_tile_cache import LocalTileCache
 from road_river_management.web.map_tiles_api import create_map_tiles_blueprint
+from road_river_management.web.photo_ui import create_photo_blueprint
 
 ROLE_CODES = frozenset({"ADMINISTRATOR", "EDITOR", "VIEWER"})
 FAILED_LIMIT = 5
@@ -88,7 +89,7 @@ def create_app(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
         PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
-        MAX_CONTENT_LENGTH=16 * 1024,
+        MAX_CONTENT_LENGTH=21 * 1024 * 1024,
     )
 
     def current_user():
@@ -191,6 +192,19 @@ def create_app(
             read_connection=lambda: _read_connection(path),
             write_connection=write_connection,
             current_user=current_user,
+        )
+    )
+
+    photo_storage_root = Path(
+        os.environ.get("RRM_PHOTO_ROOT", str(path.parent / "photos"))
+    ).expanduser().resolve()
+
+    app.register_blueprint(
+        create_photo_blueprint(
+            read_connection=lambda: _read_connection(path),
+            write_connection=write_connection,
+            current_user=current_user,
+            storage_root=photo_storage_root,
         )
     )
 

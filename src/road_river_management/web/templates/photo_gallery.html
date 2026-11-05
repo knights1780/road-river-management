@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>写真管理｜土木管理システム</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="header"><strong>土木管理システム｜写真管理</strong></header>
+<main class="container">
+<h1>{{ '施設写真' if kind == 'facility' else '修繕写真' }}（ID：{{ parent_id }}）</h1>
+<p><a href="{{ '/facilities/' ~ parent_id if kind == 'facility' else '/case-repairs/repairs/' ~ parent_id }}">元の詳細画面へ戻る</a></p>
+<section class="panel">
+<h2>写真一覧（{{ photos|length }}件）</h2>
+{% if photos %}
+<ul>
+{% for photo in photos %}
+<li>
+<img src="{{ url_for('photo_ui.image', photo_id=photo.photo_id) }}" alt="{{ photo.caption or photo.photo_category }}" loading="lazy" style="max-width: 100%; max-height: 320px; object-fit: contain;">
+<p>{{ photo.photo_category }} ／ 撮影日：{{ photo.photographed_on or '未登録' }} ／ {{ photo.caption }}</p>
+{% if can_edit %}
+<form method="post" action="{{ url_for('photo_ui.hide', photo_id=photo.photo_id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label>非表示理由 <input name="reason" maxlength="500" required></label>
+<button type="submit" class="secondary">写真を非表示</button>
+</form>
+{% endif %}
+</li>
+{% endfor %}
+</ul>
+{% else %}<p>登録写真はありません。</p>{% endif %}
+</section>
+{% if can_edit %}
+<section class="panel">
+<h2>写真を登録</h2>
+<form method="post" enctype="multipart/form-data" action="{{ url_for('photo_ui.upload', kind=kind, parent_id=parent_id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label>写真（JPG・PNG・WebP・BMP・HEIC/HEIF）<input name="photo" type="file" accept=".jpg,.jpeg,.png,.webp,.bmp,.heic,.heif" required></label>
+<label>分類 <select name="category" required>
+{% for category in categories %}<option value="{{ category }}">{{ category }}</option>{% endfor %}
+</select></label>
+<label>撮影日（未入力の場合、写真内の情報を参照）<input name="photographed_on" type="date"></label>
+<label>説明 <textarea name="caption" maxlength="1000" rows="3"></textarea></label>
+<label>原本保存 <select name="keep_original"><option value="0">しない</option><option value="1">する</option></select></label>
+<button type="submit">写真を登録</button>
+</form>
+<p class="subtle">登録画像はWebPに変換されます。原本は選択した場合のみ保存され、画面上からは直接公開されません。</p>
+</section>
+{% endif %}
+</main>
+</body>
+</html>

@@ -4,7 +4,9 @@
 <body><header class="header"><strong>土木管理システム｜修繕詳細</strong><a href="{{ url_for('dashboard') }}">ダッシュボード</a></header>
 <main class="container"><h1>{{ repair.repair_name }}</h1>
 <p class="subtle">施設：{{ repair.facility_name }} ／ 修繕ID：{{ repair.repair_id }}</p>
+<p><a href="/photos/repairs/{{ repair.repair_id }}">施工写真の登録・閲覧</a></p>
 <section class="panel"><h2>修繕内容</h2>
+<p><a href="/photos/repairs/{{ repair.repair_id }}">施工写真の登録・閲覧</a></p>
 <p>種別：{{ repair.repair_type }}</p>
 <p>概要：{{ repair.repair_description or '未登録' }}</p>
 <p>着手：{{ repair.started_on or '未登録' }} ／ 完了：{{ repair.completed_on or '未登録' }}</p>
